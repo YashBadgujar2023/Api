@@ -1,4 +1,3 @@
-
 import { NextFunction, Request, Response, request } from "express";
 import createHttpError from "http-errors";
 import userModal from "./userModal";
@@ -6,6 +5,7 @@ import bcrypt from "bcrypt";
 import { sign } from "jsonwebtoken";
 import { config } from "../config/config";
 import { User } from "./userTypes";
+import { access } from "fs";
 
 const createUser = async (req: Request, res: Response, next: NextFunction) => {
   const { name, email, password } = req.body;
@@ -26,42 +26,64 @@ const createUser = async (req: Request, res: Response, next: NextFunction) => {
       const error = createHttpError(400, "User already exit with this email");
       return next(error);
     }
+  } catch (err) {
+    return next(createHttpError(500, "Error while getting the user"));
   }
-  catch(err){
-    return next(createHttpError(500,"Error while getting the user"));
-  }
-
-  
 
   //! password
   const hashedPassword = await bcrypt.hash(password, 10);
-  
-  let newUser : User;
-  try{
+
+  let newUser: User;
+  try {
     newUser = await userModal.create({
       name,
       email,
       password: hashedPassword,
     });
-  }
-  catch(err){
-    return next(createHttpError(500,'Error while Creating the user'));
+  } catch (err) {
+    return next(createHttpError(500, "Error while Creating the user"));
   }
 
-  try{
-  //! token genrated jwt
-  const token = sign({ sub: newUser._id }, config.jwtSecret as string, {
-    expiresIn: "7d",
-    algorithm:'HS256',
-  });
+  try {
+    //! token genrated jwt
+    const token = sign({ sub: newUser._id }, config.jwtSecret as string, {
+      expiresIn: "7d",
+      algorithm: "HS256",
+    });
 
-  //! response
-  res.json({
-    accessToken: token,
-  });
-}catch(err){
-  return next(createHttpError(500,"Error  while signing the jwt token"));
-}
+    //! response
+    res.status(201).json({
+      accessToken: token,
+    });
+  } catch (err) {
+    return next(createHttpError(500, "Error  while signing the jwt token"));
+  }
 };
 
-export { createUser };
+const loginUser = async (req: Request, res: Response, next: NextFunction) => {
+  const {email,password} = req.body; // bodey coming
+  if(!email || !password){
+    return next(createHttpError(400,"All field are required"));
+  }
+  const user = await userModal.findOne({email});
+
+  if(!user){
+    return next(createHttpError(404,"User not found"));
+  }
+
+  const isMatch = await bcrypt.compare(password,user.password);
+
+
+  if(!isMatch){
+    return next(createHttpError(400,"User name or password incorrect"));
+  }
+
+  const token = sign({ sub: user._id }, config.jwtSecret as string, {
+    expiresIn: "7d",
+    algorithm: "HS256",
+  });
+
+
+  res.json({accessToken:token});
+};
+export { createUser,loginUser };
